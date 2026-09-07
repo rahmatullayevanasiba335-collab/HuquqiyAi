@@ -99,8 +99,7 @@
     <h2>Huquqiy savolingizni yozing</h2>
 
     <textarea id="question"
-      placeholder="Masalan: Mehnat shartnomasini ish beruvchi bekor qilishi mumkinmi?">
-    </textarea>
+      placeholder="Masalan: Mehnat shartnomasini ish beruvchi bekor qilishi mumkinmi?"></textarea>
 
     <button onclick="getAnswer()">
       🔍 Javob olish
@@ -117,10 +116,10 @@
 </div>
 
 <script>
-function getAnswer() {
+async function getAnswer() {
 
-  let question = document.getElementById("question").value.trim();
-  let answer = document.getElementById("answer");
+  const question = document.getElementById("question").value.trim();
+  const answer = document.getElementById("answer");
 
   if (question === "") {
     answer.style.display = "block";
@@ -129,13 +128,40 @@ function getAnswer() {
   }
 
   answer.style.display = "block";
+  answer.innerHTML = "⏳ Javob tayyorlanmoqda...";
 
-  answer.innerHTML =
-    "<b>HuquqiyAI:</b><br><br>" +
-    "Savolingiz qabul qilindi. Ushbu tizimning keyingi " +
-    "bosqichida O‘zbekiston Respublikasi qonunchiligi " +
-    "asosida sun’iy intellekt yordamida batafsil javob " +
-    "berish funksiyasi ulanadi.";
+  try {
+
+    const response = await fetch(
+      "https://muddy-heart-619a.rahmatullayevanasiba335.workers.dev/",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          question: question
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (data.error) {
+      answer.innerHTML = "❌ Xatolik: " + data.error;
+      return;
+    }
+
+    answer.innerHTML =
+      "<b>⚖️ HuquqiyAI:</b><br><br>" +
+      data.answer;
+
+  } catch (error) {
+
+    answer.innerHTML =
+      "❌ Server bilan bog‘lanishda xatolik yuz berdi.";
+
+  }
 }
 </script>
 
