@@ -14,42 +14,50 @@ export default async function handler(req, res) {
       });
     }
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-5-mini",
-        input: [
-          {
-            role: "system",
-            content:
-              "Siz O'zbekiston qonunchiligi bo'yicha yordam beruvchi Huquqiy AI assistantsiz. Javoblarni o'zbek tilida, tushunarli va ehtiyotkor tarzda bering. Qonun moddasini aniq bilmasangiz, uydirmang."
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: "Siz O'zbekiston qonunchiligi bo'yicha yordam beruvchi Huquqiy AI assistantsiz. Javoblarni o'zbek tilida, tushunarli va ehtiyotkor tarzda bering. Qonun moddasini aniq bilmasangiz, uydirmang."
+              }
+            ]
           },
-          {
-            role: "user",
-            content: question
-          }
-        ]
-      })
-    });
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: question
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
       return res.status(response.status).json({
-        error: data.error?.message || "OpenAI API xatosi"
+        error: data.error?.message || "Gemini API xatosi"
       });
     }
 
     const answer =
-      data.output_text ||
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
       "Javob olinmadi.";
 
     return res.status(200).json({
-      answer: answer
+      answer
     });
 
   } catch (error) {
