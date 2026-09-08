@@ -1,52 +1,71 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HuquqiyAI — LexUZ</title>
+  <title>Huquqiy AI</title>
 
   <style>
-    body {
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+    }
+
+    body {
       font-family: Arial, sans-serif;
-      background: #f4f6f9;
+      background: #f3f6fa;
       color: #172033;
     }
 
     header {
-      background: #172a4d;
+      background: #123b6d;
       color: white;
-      padding: 22px;
+      padding: 20px;
       text-align: center;
     }
 
     header h1 {
-      margin: 0;
-      font-size: 30px;
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    header p {
+      font-size: 14px;
+      opacity: 0.9;
     }
 
     .container {
-      max-width: 700px;
-      margin: 35px auto;
-      padding: 20px;
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 0 15px;
     }
 
     .card {
       background: white;
-      padding: 25px;
       border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,.08);
+      padding: 25px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+
+    h2 {
+      margin-bottom: 15px;
+      color: #123b6d;
     }
 
     textarea {
       width: 100%;
-      height: 140px;
-      box-sizing: border-box;
+      min-height: 160px;
       padding: 15px;
-      border: 1px solid #ccd2dc;
+      border: 1px solid #ccd5e0;
       border-radius: 10px;
-      font-size: 16px;
       resize: vertical;
+      font-size: 16px;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: #123b6d;
     }
 
     button {
@@ -55,127 +74,113 @@
       padding: 15px;
       border: none;
       border-radius: 10px;
-      background: #2563eb;
+      background: #123b6d;
       color: white;
       font-size: 17px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #0d2d54;
     }
 
     #answer {
-      display: none;
       margin-top: 20px;
       padding: 18px;
-      background: #eef4ff;
+      background: #f0f4f8;
       border-radius: 10px;
-      line-height: 1.6;
+      min-height: 80px;
       white-space: pre-wrap;
+      line-height: 1.6;
     }
 
-    .source {
+    .warning {
       margin-top: 15px;
-      font-size: 14px;
-    }
-
-    .source a {
-      color: #2563eb;
+      font-size: 12px;
+      color: #666;
     }
   </style>
 </head>
 
 <body>
 
-<header>
-  <h1>⚖️ HuquqiyAI</h1>
-  <p>LexUZ qonunchiligi asosida huquqiy yordamchi</p>
-</header>
+  <header>
+    <h1>⚖️ Huquqiy AI</h1>
+    <p>Huquqiy savollaringizga sun'iy intellekt yordamida javob oling</p>
+  </header>
 
-<div class="container">
-  <div class="card">
+  <div class="container">
 
-    <h2>Huquqiy savolingizni yozing</h2>
+    <div class="card">
+      <h2>Huquqiy savolingizni yozing</h2>
 
-    <textarea
-      id="question"
-      placeholder="Masalan: Ish beruvchi xodimni qaysi hollarda ishdan bo‘shatishi mumkin?">
-    </textarea>
+      <textarea
+        id="question"
+        placeholder="Masalan: Mehnat shartnomasi bekor qilinsa, xodimning qanday huquqlari bor?"
+      ></textarea>
 
-    <button onclick="getAnswer()">
-      🔍 LexUZ asosida javob olish
-    </button>
+      <button onclick="askAI()">
+        🤖 Javob olish
+      </button>
 
-    <div id="answer"></div>
+      <div id="answer">
+        Javob shu yerda chiqadi...
+      </div>
+
+      <p class="warning">
+        ⚠️ Ushbu AI javobi umumiy ma'lumot uchun. Aniq huquqiy holat bo'yicha
+        malakali yurist bilan maslahatlashish tavsiya etiladi.
+      </p>
+    </div>
 
   </div>
-</div>
 
-<script>
+  <script>
+    async function askAI() {
 
-async function getAnswer() {
+      const question = document.getElementById("question").value.trim();
+      const answer = document.getElementById("answer");
 
-  const question =
-    document.getElementById("question").value.trim();
-
-  const answer =
-    document.getElementById("answer");
-
-  if (!question) {
-    answer.style.display = "block";
-    answer.innerText =
-      "❗ Iltimos, huquqiy savolingizni yozing.";
-    return;
-  }
-
-  answer.style.display = "block";
-  answer.innerText =
-    "⏳ LexUZ qonunchiligidan ma'lumot izlanmoqda...";
-
-  try {
-
-    const response = await fetch(
-      "https://muddy-heart-619a.rahmatullayevanasiba335.workers.dev/",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json"
-        },
-
-        body: JSON.stringify({
-          question: question
-        })
+      if (!question) {
+        answer.innerText = "Iltimos, huquqiy savolingizni yozing.";
+        return;
       }
-    );
 
-    const data = await response.json();
+      answer.innerText = "⏳ Javob tayyorlanmoqda...";
 
-    if (!response.ok) {
+      try {
 
-      answer.innerText =
-        "❌ Xatolik:\n\n" +
-        (data.error || "Server xatosi");
+        const response = await fetch("/api/chat", {
+          method: "POST",
 
-      return;
+          headers: {
+            "Content-Type": "application/json"
+          },
+
+          body: JSON.stringify({
+            question: question
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.answer) {
+          answer.innerText = data.answer;
+        } else if (data.error) {
+          answer.innerText = "Xatolik: " + data.error;
+        } else {
+          answer.innerText = "Javob olishda xatolik yuz berdi.";
+        }
+
+      } catch (error) {
+
+        answer.innerText =
+          "Server bilan bog'lanishda xatolik yuz berdi.";
+
+        console.error(error);
+      }
     }
-
-    answer.innerText =
-      "⚖️ HuquqiyAI\n\n" +
-      (data.answer || "Javob topilmadi.");
-
-    if (data.source) {
-
-      answer.innerHTML +=
-        "\n\n📚 Manba: " +
-        data.source;
-    }
-
-  } catch (error) {
-
-    answer.innerText =
-      "❌ Server bilan bog‘lanib bo‘lmadi.";
-
-  }
-}
-
-</script>
+  </script>
 
 </body>
-</html>  
+</html>
