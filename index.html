@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+    <!DOCTYPE html>
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HuquqiyAI</title>
+  <title>HuquqiyAI — LexUZ</title>
 
   <style>
     body {
@@ -16,7 +16,7 @@
     header {
       background: #172a4d;
       color: white;
-      padding: 20px;
+      padding: 22px;
       text-align: center;
     }
 
@@ -25,13 +25,9 @@
       font-size: 30px;
     }
 
-    header p {
-      margin: 8px 0 0;
-    }
-
     .container {
       max-width: 700px;
-      margin: 40px auto;
+      margin: 35px auto;
       padding: 20px;
     }
 
@@ -39,14 +35,14 @@
       background: white;
       padding: 25px;
       border-radius: 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      box-shadow: 0 4px 15px rgba(0,0,0,.08);
     }
 
     textarea {
       width: 100%;
-      height: 130px;
-      padding: 15px;
+      height: 140px;
       box-sizing: border-box;
+      padding: 15px;
       border: 1px solid #ccd2dc;
       border-radius: 10px;
       font-size: 16px;
@@ -62,26 +58,25 @@
       background: #2563eb;
       color: white;
       font-size: 17px;
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #1d4ed8;
     }
 
     #answer {
+      display: none;
       margin-top: 20px;
-      padding: 15px;
+      padding: 18px;
       background: #eef4ff;
       border-radius: 10px;
-      display: none;
       line-height: 1.6;
+      white-space: pre-wrap;
     }
 
-    .warning {
-      margin-top: 20px;
-      font-size: 13px;
-      color: #666;
+    .source {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+
+    .source a {
+      color: #2563eb;
     }
   </style>
 </head>
@@ -90,7 +85,7 @@
 
 <header>
   <h1>⚖️ HuquqiyAI</h1>
-  <p>Huquqiy savollaringizga sun’iy intellekt yordamida javob oling</p>
+  <p>LexUZ qonunchiligi asosida huquqiy yordamchi</p>
 </header>
 
 <div class="container">
@@ -98,37 +93,40 @@
 
     <h2>Huquqiy savolingizni yozing</h2>
 
-    <textarea id="question"
-      placeholder="Masalan: Mehnat shartnomasini ish beruvchi bekor qilishi mumkinmi?"></textarea>
+    <textarea
+      id="question"
+      placeholder="Masalan: Ish beruvchi xodimni qaysi hollarda ishdan bo‘shatishi mumkin?">
+    </textarea>
 
     <button onclick="getAnswer()">
-      🔍 Javob olish
+      🔍 LexUZ asosida javob olish
     </button>
 
     <div id="answer"></div>
-
-    <div class="warning">
-      ⚠️ HuquqiyAI ma’lumot beruvchi yordamchi hisoblanadi.
-      Muhim huquqiy masalalarda malakali yuristga murojaat qiling.
-    </div>
 
   </div>
 </div>
 
 <script>
+
 async function getAnswer() {
 
-  const question = document.getElementById("question").value.trim();
-  const answer = document.getElementById("answer");
+  const question =
+    document.getElementById("question").value.trim();
 
-  if (question === "") {
+  const answer =
+    document.getElementById("answer");
+
+  if (!question) {
     answer.style.display = "block";
-    answer.innerHTML = "❗ Iltimos, huquqiy savolingizni yozing.";
+    answer.innerText =
+      "❗ Iltimos, huquqiy savolingizni yozing.";
     return;
   }
 
   answer.style.display = "block";
-  answer.innerHTML = "⏳ Javob tayyorlanmoqda...";
+  answer.innerText =
+    "⏳ LexUZ qonunchiligidan ma'lumot izlanmoqda...";
 
   try {
 
@@ -136,9 +134,11 @@ async function getAnswer() {
       "https://muddy-heart-619a.rahmatullayevanasiba335.workers.dev/",
       {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json"
         },
+
         body: JSON.stringify({
           question: question
         })
@@ -147,23 +147,35 @@ async function getAnswer() {
 
     const data = await response.json();
 
-    if (data.error) {
-      answer.innerHTML = "❌ Xatolik: " + data.error;
+    if (!response.ok) {
+
+      answer.innerText =
+        "❌ Xatolik:\n\n" +
+        (data.error || "Server xatosi");
+
       return;
     }
 
-    answer.innerHTML =
-      "<b>⚖️ HuquqiyAI:</b><br><br>" +
-      data.answer;
+    answer.innerText =
+      "⚖️ HuquqiyAI\n\n" +
+      (data.answer || "Javob topilmadi.");
+
+    if (data.source) {
+
+      answer.innerHTML +=
+        "\n\n📚 Manba: " +
+        data.source;
+    }
 
   } catch (error) {
 
-    answer.innerHTML =
-      "❌ Server bilan bog‘lanishda xatolik yuz berdi.";
+    answer.innerText =
+      "❌ Server bilan bog‘lanib bo‘lmadi.";
 
   }
 }
+
 </script>
 
 </body>
-</html>
+</html>  
