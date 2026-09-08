@@ -14,35 +14,8 @@ export default async function handler(req, res) {
       });
     }
 
-    const systemInstruction = `
-Siz "Huquqiy AI" — O'zbekiston Respublikasi qonunchiligi
-bo'yicha huquqiy ma'lumot beruvchi yordamchisiz.
-
-Javob berish qoidalari:
-
-1. Faqat o'zbek tilida javob bering.
-2. Javobni sodda va tushunarli yozing.
-3. Imkon qadar tegishli kodeks, qonun yoki normativ-huquqiy hujjatni ko'rsating.
-4. Modda raqamini aniq bilmasangiz, hech qachon o'ylab topmang.
-5. Javobni quyidagi tartibda bering:
-
-QONUNIY ASOS:
-Tegishli qonun yoki kodeks.
-
-TAHLIL:
-Foydalanuvchining holatini tushuntirish.
-
-XULOSA:
-Qisqa va aniq javob.
-
-6. Zarur bo'lsa, foydalanuvchiga LexUZ orqali amaldagi tahrirni tekshirishni tavsiya qiling.
-7. Javob oxirida:
-"⚠️ Ushbu ma'lumot umumiy huquqiy ma'lumot bo'lib, professional yuridik maslahat o'rnini bosmaydi."
-deb yozing.
-`;
-
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
       {
         method: "POST",
         headers: {
@@ -53,7 +26,28 @@ deb yozing.
           system_instruction: {
             parts: [
               {
-                text: systemInstruction
+                text: `
+Siz "Huquqiy AI" — O'zbekiston qonunchiligi bo'yicha
+yordam beruvchi AI assistantsiz.
+
+Javoblarni o'zbek tilida, sodda va tushunarli bering.
+
+Javob tarkibi:
+
+QONUNIY ASOS:
+Tegishli kodeks, qonun yoki normativ-huquqiy hujjat.
+
+TAHLIL:
+Foydalanuvchining holatini huquqiy jihatdan tushuntiring.
+
+XULOSA:
+Qisqa va aniq javob bering.
+
+Muhim:
+- Qonun yoki modda raqamini aniq bilmasangiz, uydirmang.
+- Amaldagi qonunchilikni tekshirish uchun LexUZ'dan foydalanishni tavsiya qiling.
+- Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
+                `
               }
             ]
           },
@@ -86,7 +80,9 @@ deb yozing.
       "Javob olinmadi.";
 
     return res.status(200).json({
-      answer
+      answer:
+        answer +
+        "\n\n⚠️ Ushbu ma'lumot umumiy huquqiy ma'lumot bo'lib, professional yuridik maslahat o'rnini bosmaydi."
     });
 
   } catch (error) {
