@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+        export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -12,6 +12,35 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    // /start komandasi
+    if (text === "/start") {
+      await fetch(
+        `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text:
+              "⚖️ HUQUQIY AI\n\n" +
+              "Assalomu alaykum!\n" +
+              "Men O'zbekiston qonunchiligi bo'yicha huquqiy savollaringizga javob beruvchi AI yordamchiman.\n\n" +
+              "📌 Menga huquqiy savolingizni yozing.\n\n" +
+              "Masalan:\n" +
+              "• Ish beruvchi maoshni vaqtida bermasa nima qilish kerak?\n" +
+              "• Telefonim o'g'irlandi, nima qilishim kerak?\n" +
+              "• Ajrashish tartibi qanday?\n\n" +
+              "⚠️ Javoblar umumiy huquqiy ma'lumot hisoblanadi."
+          }
+        }
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // AI javobi
     const aiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
       {
