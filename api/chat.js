@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { question } = req.body;
+    const { question } = req.body || {};
 
     if (!question || !question.trim()) {
       return res.status(400).json({
@@ -14,13 +14,23 @@ export default async function handler(req, res) {
       });
     }
 
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY topilmadi");
+
+      return res.status(500).json({
+        error: "GEMINI_API_KEY Vercel Environment Variables'da topilmadi"
+      });
+    }
+
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY
+          "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
           system_instruction: {
@@ -28,11 +38,9 @@ export default async function handler(req, res) {
               {
                 text: `
 Siz "Huquqiy AI" — O'zbekiston qonunchiligi bo'yicha
-yordam beruvchi AI assistantsiz.
+umumiy huquqiy ma'lumot beruvchi AI assistantsiz.
 
 Javoblarni o'zbek tilida, sodda va tushunarli bering.
-
-Javob tarkibi:
 
 QONUNIY ASOS:
 Tegishli kodeks, qonun yoki normativ-huquqiy hujjat.
@@ -47,7 +55,7 @@ Muhim:
 - Qonun yoki modda raqamini aniq bilmasangiz, uydirmang.
 - Amaldagi qonunchilikni tekshirish uchun LexUZ'dan foydalanishni tavsiya qiling.
 - Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
-                `
+`
               }
             ]
           },
@@ -56,7 +64,7 @@ Muhim:
               role: "user",
               parts: [
                 {
-                  text: question
+                  text: question.trim()
                 }
               ]
             }
@@ -67,14 +75,19 @@ Muhim:
 
     const data = await response.json();
 
+    console.log("Gemini status:", response.status);
+    console.log("Gemini response:", JSON.stringify(data));
+
     if (!response.ok) {
-      return res.status(response.status).json({
-        error: data.error?.message || "Gemini API xatosi"
+      return res.status(500).json({
+        error:
+          data?.error?.message ||
+          `Gemini API xatosi: ${response.status}`
       });
     }
 
     const answer =
-      data.candidates?.[0]?.content?.parts
+      data?.candidates?.[0]?.content?.parts
         ?.map(part => part.text || "")
         .join("") ||
       "Javob olinmadi.";
@@ -86,10 +99,10 @@ Muhim:
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Server xatosi:", error);
 
     return res.status(500).json({
-      error: "Server xatosi"
+      error: error.message || "Server xatosi"
     });
   }
 }
