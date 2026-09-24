@@ -17,15 +17,13 @@ export default async function handler(req, res) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error("GEMINI_API_KEY topilmadi");
-
       return res.status(500).json({
-        error: "GEMINI_API_KEY Vercel Environment Variables'da topilmadi"
+        error: "GEMINI_API_KEY topilmadi"
       });
     }
 
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      "https://generativelanguage.googleapis.com/v1/interactions",
       {
         method: "POST",
         headers: {
@@ -33,10 +31,9 @@ export default async function handler(req, res) {
           "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: `
+          model: "gemini-3.6-flash",
+
+          system_instruction: `
 Siz "Huquqiy AI" — O'zbekiston qonunchiligi bo'yicha
 umumiy huquqiy ma'lumot beruvchi AI assistantsiz.
 
@@ -55,20 +52,9 @@ Muhim:
 - Qonun yoki modda raqamini aniq bilmasangiz, uydirmang.
 - Amaldagi qonunchilikni tekshirish uchun LexUZ'dan foydalanishni tavsiya qiling.
 - Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
-`
-              }
-            ]
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: question.trim()
-                }
-              ]
-            }
-          ]
+`,
+
+          input: question.trim()
         })
       }
     );
@@ -80,16 +66,18 @@ Muhim:
 
     if (!response.ok) {
       return res.status(500).json({
-        error:
-          data?.error?.message ||
-          `Gemini API xatosi: ${response.status}`
+        error: data?.error?.message || "Gemini API xatosi"
       });
     }
 
     const answer =
-      data?.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("") ||
+      data?.output_text ||
+      data?.steps
+        ?.filter(step => step.type === "model_output")
+        ?.flatMap(step => step.content || [])
+        ?.filter(item => item.type === "text")
+        ?.map(item => item.text)
+        ?.join("") ||
       "Javob olinmadi.";
 
     return res.status(200).json({
