@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({
-      error: "Faqat POST so'rovi qabul qilinadi"
+      error: "Faqat POST so'rovi qabul qilinadi."
     });
   }
 
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
       !question.trim()
     ) {
       return res.status(400).json({
-        error: "Iltimos, savol kiriting."
+        error: "Iltimos, savolingizni kiriting."
       });
     }
 
@@ -34,33 +34,36 @@ export default async function handler(req, res) {
           "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          model: "gemini-2.5-flash-lite",
+          model: "gemini-3.5-flash-lite",
 
           system_instruction: `
 Siz "Huquqiy AI" — O'zbekiston qonunchiligi
-bo'yicha umumiy huquqiy ma'lumot beruvchi AI assistantsiz.
+bo'yicha umumiy huquqiy ma'lumot beruvchi
+sun'iy intellekt yordamchisiz.
 
 Javoblarni o'zbek tilida, sodda va tushunarli bering.
 
 JAVOB TUZILISHI:
 
 1. QONUNIY ASOS
-Tegishli qonun, kodeks yoki normativ-huquqiy hujjatni
-ko'rsating. Modda raqamini aniq bilmasangiz, uydirmang.
+Tegishli qonun, kodeks yoki normativ-huquqiy
+hujjatni ko'rsating. Modda raqamini aniq
+bilmasangiz, uni o'ylab topmang.
 
 2. TAHLIL
-Foydalanuvchining holatini huquqiy jihatdan tushuntiring.
+Foydalanuvchining holatini huquqiy jihatdan
+tushuntiring. Zarur bo'lsa, qo'shimcha savol bering.
 
 3. XULOSA
-Qisqa va aniq javob bering.
+Qisqa, aniq va amaliy javob bering.
 
 MUHIM QOIDALAR:
 - O'zbekiston qonunchiligiga asoslaning.
 - Qonunlarning amaldagi holatini aniq bilmasangiz,
   LexUZ orqali tekshirishni tavsiya qiling.
-- Mavjud bo'lmagan qonun yoki moddalarni o'ylab topmang.
-- Kerak bo'lsa, foydalanuvchidan qo'shimcha ma'lumot so'rang.
-- Javobni xolis, tushunarli va amaliy yozing.
+- Mavjud bo'lmagan qonun va moddalarni uydirmang.
+- Ishonchsiz ma'lumotni aniq fakt sifatida ko'rsatmang.
+- Javoblarni xolis va tushunarli yozing.
 - Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
 `,
 
@@ -82,7 +85,7 @@ MUHIM QOIDALAR:
       const message =
         data?.error?.message ||
         data?.message ||
-        "Gemini API xatosi yuz berdi.";
+        "Gemini API bilan bog'lanishda xatolik yuz berdi.";
 
       return res.status(
         response.status === 429 ? 429 : 500
