@@ -8,7 +8,10 @@ export default async function handler(req, res) {
   try {
     const { question } = req.body || {};
 
-    if (!question || !question.trim()) {
+    if (
+      typeof question !== "string" ||
+      !question.trim()
+    ) {
       return res.status(400).json({
         error: "Savol kiritilmagan"
       });
@@ -31,26 +34,34 @@ export default async function handler(req, res) {
           "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
-          model: "gemini-3.6-flash",
+          model: "gemini-3.1-flash-lite",
 
           system_instruction: `
-Siz "Huquqiy AI" — O'zbekiston qonunchiligi bo'yicha
-umumiy huquqiy ma'lumot beruvchi AI assistantsiz.
+Siz "Huquqiy AI" — O'zbekiston qonunchiligi
+bo'yicha umumiy huquqiy ma'lumot beruvchi
+AI assistantsiz.
 
 Javoblarni o'zbek tilida, sodda va tushunarli bering.
 
-QONUNIY ASOS:
-Tegishli kodeks, qonun yoki normativ-huquqiy hujjat.
+JAVOB TUZILISHI:
 
-TAHLIL:
+1. QONUNIY ASOS:
+Tegishli qonun, kodeks yoki normativ-huquqiy hujjatni
+ko'rsating. Modda raqamini aniq bilmasangiz, uydirmang.
+
+2. TAHLIL:
 Foydalanuvchining holatini huquqiy jihatdan tushuntiring.
 
-XULOSA:
-Qisqa va aniq javob bering.
+3. XULOSA:
+Qisqa, aniq va amaliy javob bering.
 
-Muhim:
-- Qonun yoki modda raqamini aniq bilmasangiz, uydirmang.
-- Amaldagi qonunchilikni tekshirish uchun LexUZ'dan foydalanishni tavsiya qiling.
+MUHIM QOIDALAR:
+- O'zbekiston qonunchiligiga asoslaning.
+- Amaldagi qonun haqida ishonchingiz komil bo'lmasa,
+  LexUZ orqali tekshirishni tavsiya qiling.
+- Mavjud bo'lmagan qonun yoki moddalarni o'ylab topmang.
+- Kerak bo'lsa, foydalanuvchidan qo'shimcha ma'lumot so'rang.
+- Javobni tushunarli va xolis yozing.
 - Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
 `,
 
@@ -61,12 +72,19 @@ Muhim:
 
     const data = await response.json();
 
-    console.log("Gemini status:", response.status);
-    console.log("Gemini response:", JSON.stringify(data));
+    console.log("Gemini HTTP status:", response.status);
 
     if (!response.ok) {
-      return res.status(500).json({
-        error: data?.error?.message || "Gemini API xatosi"
+      console.error(
+        "Gemini API xatosi:",
+        JSON.stringify(data)
+      );
+
+      return res.status(response.status === 429 ? 429 : 500).json({
+        error:
+          data?.error?.message ||
+          data?.message ||
+          "Gemini API xatosi"
       });
     }
 
@@ -78,7 +96,7 @@ Muhim:
         ?.filter(item => item.type === "text")
         ?.map(item => item.text)
         ?.join("") ||
-      "Javob olinmadi.";
+      "Javob olinmadi. Iltimos, qayta urinib ko'ring.";
 
     return res.status(200).json({
       answer:
@@ -90,7 +108,7 @@ Muhim:
     console.error("Server xatosi:", error);
 
     return res.status(500).json({
-      error: error.message || "Server xatosi"
+      error: "Serverda xatolik yuz berdi. Keyinroq urinib ko'ring."
     });
   }
 }
