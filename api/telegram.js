@@ -1,372 +1,529 @@
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(200).send("Huquqiy AI bot ishlayapti.");
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
+
+const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+const CHANNELS_KEY = "huquqiy_ai:channels";
+const STATE_PREFIX = "huquqiy_ai:admin_state:";
+
+async function redis(command, ...args) {
+  if (!UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
+    throw new Error("Upstash Redis URL yoki token sozlanmagan.");
   }
 
-  const {
-    TELEGRAM_BOT_TOKEN,
-    GEMINI_API_KEY,
-    ADMIN_TELEGRAM_ID,
-    UPSTASH_REDIS_REST_URL,
-    UPSTASH_REDIS_REST_TOKEN,
-  } = process.env;
+  const redisUrl = UPSTASH_REDIS_REST_URL.trim().replace(/\/+$/, "");
+  const response = await fetch(redisUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([command, ...args]),
+  });
 
-  if (
-    !TELEGRAM_BOT_TOKEN ||
-    !GEMINI_API_KEY ||
-    !ADMIN_TELEGRAM_ID ||
-    !UPSTASH_REDIS_REST_URL ||
-    !UPSTASH_REDIS_REST_TOKEN
-  ) {
-    console.error("Kerakli environment variable yetishmayapti.");
-    return res.status(500).send("Configuration error");
+  const data = await response.json();
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error || `Redis xatosi: ${response.status}`);
   }
 
-  const telegramApi =
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+  return data.result;
+}
 
-  const redisUrl = UPSTASH_REDIS_REST_URL.replace(/\/+$/, "");
-  const redisKey = "huquqiy_ai:channels";
+async function getChannels() {
+  const result = await redis("GET", CHANNELS_KEY);
 
-  async function telegram(method, body = {}) {
-    const response = await fetch(`${telegramApi}/${method}`, {
+  if (!result) return [];
+
+  try {
+    const parsed = JSON.parse(result);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveChannels(channels) {
+  await redis("SET", CHANNELS_KEY, JSON.stringify(channels));
+}
+
+async function getAdminState(userId) {
+  const result = await redis("GET", STATE_PREFIX + userId);
+  return result || "";
+}
+
+async function setAdminState(userId, state) {
+  const key = STATE_PREFIX + userId;
+
+  if (!state) {
+    await redis("DEL", key);
+  } else {
+    await redis("SET", key, state, "EX", 600);
+  }
+}
+
+async function telegram(method, body = {}) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan.");
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`,
+    {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
-
-    const data = await response.json();
-
-    if (!data.ok) {
-      throw new Error(`Telegram ${method}: ${data.description || "API error"}`);
     }
+  );
 
-    return data.result;
+  const data = await response.json();
+
+  if (!response.ok || !data.ok) {
+    throw new Error(data.description || `Telegram xatosi: ${method}`);
   }
 
-  async function redis(command, ...args) {
-    const response = await fetch(redisUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${UPSTASH_REDIS_REST_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([command, ...args]),
-    });
+  return data.result;
+}
 
-    const data = await response.json();
+async function sendMessage(chatId, text, extra = {}) {
+  return telegram("sendMessage", {
+    chat_id: chatId,
+    text,
+    ...extra,
+  });
+}
 
-    if (!response.ok || data.error) {
-      throw new Error(`Redis xatosi: ${data.error || response.status}`);
-    }
-
-    return data.result;
-  }
-
-  async function getChannels() {
-    const value = await redis("GET", redisKey);
-
-    if (!value) return [];
-
-    try {
-      const parsed = typeof value === "string" ? JSON.parse(value) : value;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  async function saveChannels(channels) {
-    await redis("SET", redisKey, JSON.stringify(channels));
-  }
-
-  async function sendMessage(chatId, text, extra = {}) {
-    return telegram("sendMessage", {
-      chat_id: chatId,
-      text,
-      ...extra,
-    });
-  }
-
-  async function isSubscribed(userId, channels) {
-    for (const channel of channels) {
-      try {
-        const member = await telegram("getChatMember", {
-          chat_id: channel.id,
-          user_id: userId,
-        });
-
-        if (
-          !["creator", "administrator", "member"].includes(member.status) &&
-          !(member.status === "restricted" && member.is_member)
-        ) {
-          return false;
-        }
-      } catch (error) {
-        console.error("Obunani tekshirish xatosi:", error.message);
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  async function askGemini(question) {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
-        encodeURIComponent(GEMINI_API_KEY),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [
-              {
-                text:
-                  "Siz O‘zbekiston qonunchiligi bo‘yicha yordam beruvchi Huquqiy AI assistantsiz. " +
-                  "O‘zbek tilida aniq, sodda va ehtiyotkor javob bering. " +
-                  "Qonun moddasi yoki raqamini ishonchingiz komil bo‘lmasa, uydirmang. " +
-                  "Huquqiy ma’lumot umumiy ekanini, murakkab holatda advokatga murojaat qilish kerakligini ayting. " +
-                  "Qonunlar o‘zgarishi mumkinligini hisobga oling.",
-              },
-            ],
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: question }],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 1200,
-          },
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("Gemini xatosi:", response.status, data);
-      throw new Error("AI javob bera olmadi.");
-    }
-
-    return (
-      data.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text || "")
-        .join("")
-        .trim() || "Kechirasiz, hozir javob tayyorlay olmadim."
-    );
-  }
-
-  const update = req.body;
-
+async function answerCallback(callbackId, text = "") {
   try {
-    // Telegram webhook tekshiruvi
-    if (update?.callback_query) {
-      const callback = update.callback_query;
-      const userId = String(callback.from.id);
-      const chatId = callback.message.chat.id;
-      const data = callback.data || "";
+    await telegram("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text,
+    });
+  } catch (error) {
+    console.error("Callback javobi xatosi:", error.message);
+  }
+}
 
-      await telegram("answerCallbackQuery", {
-        callback_query_id: callback.id,
+function isAdmin(userId) {
+  return (
+    ADMIN_TELEGRAM_ID &&
+    String(userId) === String(ADMIN_TELEGRAM_ID)
+  );
+}
+
+function adminKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: "➕ Kanal qo‘shish", callback_data: "add_channel" }],
+      [{ text: "📋 Kanallar ro‘yxati", callback_data: "list_channels" }],
+      [{ text: "➖ Kanalni o‘chirish", callback_data: "remove_channel" }],
+    ],
+  };
+}
+
+async function showAdminMenu(chatId) {
+  await sendMessage(chatId, "⚙️ Admin paneli", {
+    reply_markup: adminKeyboard(),
+  });
+}
+
+function normalizeChannel(input) {
+  let channel = input.trim();
+
+  channel = channel.replace(/^https?:\/\/t\.me\//i, "");
+  channel = channel.replace(/^@/, "");
+  channel = channel.replace(/\/+$/, "");
+
+  if (
+    !/^[a-zA-Z0-9_]{5,32}$/.test(channel) ||
+    channel.includes("?")
+  ) {
+    return null;
+  }
+
+  return {
+    username: "@" + channel,
+    url: "https://t.me/" + channel,
+  };
+}
+
+async function checkSubscription(userId, channels) {
+  for (const channel of channels) {
+    try {
+      const member = await telegram("getChatMember", {
+        chat_id: channel.username,
+        user_id: userId,
       });
 
-      if (userId === String(ADMIN_TELEGRAM_ID)) {
-        if (data === "admin_add") {
-          await sendMessage(
-            chatId,
-            "Kanalni quyidagi formatda yuboring:\n@kanalusername | https://t.me/kanalusername\n\nBot kanalda admin bo‘lishi kerak."
-          );
-        } else if (data === "admin_list") {
-          const channels = await getChannels();
+      const status = member.status;
+      const subscribed =
+        status === "creator" ||
+        status === "administrator" ||
+        status === "member" ||
+        (status === "restricted" && member.is_member === true);
 
-          await sendMessage(
-            chatId,
-            channels.length
-              ? "Ulangan kanallar:\n" +
-                  channels
-                    .map((channel, index) => `${index + 1}. ${channel.id} — ${channel.url}`)
-                    .join("\n")
-              : "Hozircha homiy kanallar qo‘shilmagan."
-          );
-        } else if (data === "admin_remove") {
-          const channels = await getChannels();
+      if (!subscribed) return false;
+    } catch (error) {
+      console.error(
+        "Obunani tekshirish xatosi:",
+        channel.username,
+        error.message
+      );
 
-          if (!channels.length) {
-            await sendMessage(chatId, "O‘chirish uchun kanal yo‘q.");
-          } else {
-            const keyboard = channels.map((channel, index) => [
-              {
-                text: `${index + 1}. ${channel.id}`,
-                callback_data: `remove_channel:${index}`,
-              },
-            ]);
-
-            await sendMessage(chatId, "O‘chiriladigan kanalni tanlang:", {
-              reply_markup: { inline_keyboard: keyboard },
-            });
-          }
-        } else if (data.startsWith("remove_channel:")) {
-          const index = Number(data.split(":")[1]);
-          const channels = await getChannels();
-
-          if (Number.isInteger(index) && index >= 0 && index < channels.length) {
-            const removed = channels.splice(index, 1)[0];
-            await saveChannels(channels);
-            await sendMessage(chatId, `Kanal o‘chirildi: ${removed.id}`);
-          } else {
-            await sendMessage(chatId, "Kanal topilmadi. Ro‘yxatni qayta oching.");
-          }
-        }
-      }
-
-      if (data === "check_subscription") {
-        const channels = await getChannels();
-
-        if (!channels.length || await isSubscribed(userId, channels)) {
-          await sendMessage(
-            chatId,
-            "Obuna tekshirildi! Endi huquqiy savolingizni yozishingiz mumkin."
-          );
-        } else {
-          await sendMessage(
-            chatId,
-            "Iltimos, barcha homiy kanallarga obuna bo‘ling va qayta tekshiring."
-          );
-        }
-      }
-
-      return res.status(200).send("OK");
+      // Kanalni tekshirib bo‘lmasa, obunani tasdiqlamaymiz.
+      return false;
     }
+  }
 
-    const message = update?.message;
-    if (!message?.chat || !message?.from) {
-      return res.status(200).send("OK");
-    }
+  return true;
+}
 
-    const chatId = message.chat.id;
-    const userId = String(message.from.id);
-    const text = (message.text || "").trim();
+function subscriptionKeyboard(channels) {
+  const rows = channels.map((channel) => [
+    {
+      text: `📢 ${channel.username} kanaliga obuna bo‘lish`,
+      url: channel.url,
+    },
+  ]);
 
-    if (!text) {
-      await sendMessage(chatId, "Iltimos, savolingizni matn ko‘rinishida yuboring.");
-      return res.status(200).send("OK");
-    }
+  rows.push([
+    {
+      text: "✅ Obunani tekshirish",
+      callback_data: "check_subscription",
+    },
+  ]);
 
-    if (text === "/start" || text === "/admin") {
-      if (text === "/admin" && userId !== String(ADMIN_TELEGRAM_ID)) {
-        await sendMessage(chatId, "Bu buyruq faqat administrator uchun.");
-        return res.status(200).send("OK");
-      }
+  return { inline_keyboard: rows };
+}
 
-      if (userId === String(ADMIN_TELEGRAM_ID)) {
-        await sendMessage(chatId, "Admin panel", {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "➕ Kanal qo‘shish", callback_data: "admin_add" }],
-              [{ text: "📋 Kanallar ro‘yxati", callback_data: "admin_list" }],
-              [{ text: "➖ Kanalni o‘chirish", callback_data: "admin_remove" }],
-            ],
+async function askForSubscription(chatId, channels) {
+  await sendMessage(
+    chatId,
+    "Botdan foydalanish uchun quyidagi homiy kanallarga obuna bo‘ling. So‘ng «Obunani tekshirish» tugmasini bosing.",
+    { reply_markup: subscriptionKeyboard(channels) }
+  );
+}
+
+async function getLegalAnswer(question) {
+  if (!GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY sozlanmagan.");
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: {
+          parts: [
+            {
+              text:
+                "Siz O‘zbekiston qonunchiligi bo‘yicha huquqiy yordamchi botsiz. " +
+                "Foydalanuvchiga o‘zbek tilida aniq, tushunarli va tartibli javob bering. " +
+                "Qonun yoki modda raqamini ishonchingiz komil bo‘lmasa, uydirmang. " +
+                "Qonunchilik o‘zgarishi mumkinligini hisobga oling. " +
+                "Javob umumiy ma’lumot ekanini va murakkab vaziyatda malakali yuristga murojaat qilish kerakligini eslatishingiz mumkin. " +
+                "O‘zingizni advokat deb ko‘rsatmang.",
+            },
+          ],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: question }],
           },
-        });
-      }
+        ],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 1500,
+        },
+      }),
+    }
+  );
 
-      const channels = await getChannels();
+  const data = await response.json();
 
-      if (channels.length) {
-        const keyboard = channels.map((channel) => [
-          { text: `📢 ${channel.id}`, url: channel.url },
-        ]);
+  if (!response.ok) {
+    console.error("Gemini xatosi:", JSON.stringify(data));
+    throw new Error("Gemini xizmatidan javob olish imkoni bo‘lmadi.");
+  }
 
-        keyboard.push([
-          { text: "✅ Obunani tekshirish", callback_data: "check_subscription" },
-        ]);
+  const answer = data.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text || "")
+    .join("")
+    .trim();
 
-        await sendMessage(
-          chatId,
-          "Assalomu alaykum! Botdan foydalanish uchun homiy kanallarga obuna bo‘ling.",
-          { reply_markup: { inline_keyboard: keyboard } }
-        );
-      } else {
-        await sendMessage(
-          chatId,
-          "Assalomu alaykum! Men Huquqiy AI botman. O‘zbekiston qonunchiligi bo‘yicha savolingizni yozing."
-        );
-      }
+  if (!answer) {
+    throw new Error("AI bo‘sh javob qaytardi.");
+  }
 
-      return res.status(200).send("OK");
+  return answer;
+}
+
+async function handleAdminCallback(callback) {
+  const chatId = callback.message.chat.id;
+  const userId = callback.from.id;
+  const action = callback.data;
+
+  if (!isAdmin(userId)) {
+    await answerCallback(callback.id, "Bu funksiya faqat admin uchun.");
+    return;
+  }
+
+  await answerCallback(callback.id);
+
+  if (action === "add_channel") {
+    await setAdminState(userId, "add_channel");
+    await sendMessage(
+      chatId,
+      "Qo‘shmoqchi bo‘lgan ochiq Telegram kanalingiz username'ini yuboring.\n\nMasalan: @mening_kanalim\n\nBekor qilish uchun /cancel yozing."
+    );
+    return;
+  }
+
+  if (action === "list_channels") {
+    const channels = await getChannels();
+
+    if (!channels.length) {
+      await sendMessage(chatId, "Hozircha kanallar qo‘shilmagan.");
+      return;
     }
 
-    if (userId === String(ADMIN_TELEGRAM_ID) && text.startsWith("@")) {
-      const parts = text.split("|").map((part) => part.trim());
-      const channelId = parts[0];
-      const url = parts[1];
+    const text = channels
+      .map((channel, index) => `${index + 1}. ${channel.username}`)
+      .join("\n");
 
-      if (
-        parts.length !== 2 ||
-        !/^@[A-Za-z0-9_]{5,}$/.test(channelId) ||
-        !/^https:\/\/t\.me\/[A-Za-z0-9_]+\/?$/.test(url)
-      ) {
-        await sendMessage(
-          chatId,
-          "Format noto‘g‘ri.\nMisol:\n@kanalusername | https://t.me/kanalusername"
-        );
-        return res.status(200).send("OK");
+    await sendMessage(chatId, "📋 Homiy kanallar:\n\n" + text, {
+      reply_markup: adminKeyboard(),
+    });
+    return;
+  }
+
+  if (action === "remove_channel") {
+    const channels = await getChannels();
+
+    if (!channels.length) {
+      await sendMessage(chatId, "O‘chirish uchun kanal mavjud emas.");
+      return;
+    }
+
+    await sendMessage(chatId, "O‘chirmoqchi bo‘lgan kanalni tanlang:", {
+      reply_markup: {
+        inline_keyboard: channels.map((channel) => [
+          {
+            text: `❌ ${channel.username}`,
+            callback_data: "delete_channel:" + channel.username,
+          },
+        ]),
+      },
+    });
+    return;
+  }
+
+  if (action.startsWith("delete_channel:")) {
+    const username = action.slice("delete_channel:".length);
+    const channels = await getChannels();
+    const updated = channels.filter(
+      (channel) => channel.username !== username
+    );
+
+    await saveChannels(updated);
+    await sendMessage(chatId, `✅ ${username} ro‘yxatdan o‘chirildi.`, {
+      reply_markup: adminKeyboard(),
+    });
+  }
+}
+
+async function handleCallback(callback) {
+  const userId = callback.from.id;
+  const chatId = callback.message?.chat?.id;
+
+  if (!chatId) {
+    await answerCallback(callback.id);
+    return;
+  }
+
+  if (
+    callback.data === "add_channel" ||
+    callback.data === "list_channels" ||
+    callback.data === "remove_channel" ||
+    callback.data.startsWith("delete_channel:")
+  ) {
+    await handleAdminCallback(callback);
+    return;
+  }
+
+  if (callback.data === "check_subscription") {
+    await answerCallback(callback.id, "Obuna tekshirilmoqda...");
+
+    const channels = await getChannels();
+
+    if (channels.length) {
+      const subscribed = await checkSubscription(userId, channels);
+
+      if (!subscribed) {
+        await askForSubscription(chatId, channels);
+        return;
       }
+    }
 
-      try {
-        await telegram("getChat", { chat_id: channelId });
-      } catch {
-        await sendMessage(
-          chatId,
-          "Kanal topilmadi yoki bot unga kira olmayapti. Botni kanalga admin qilib qo‘shing."
-        );
-        return res.status(200).send("OK");
-      }
+    await sendMessage(
+      chatId,
+      "✅ Obuna tasdiqlandi! Endi huquqiy savolingizni yozishingiz mumkin."
+    );
+  }
+}
 
-      const channels = await getChannels();
+async function handleMessage(message) {
+  const chatId = message.chat.id;
+  const userId = message.from.id;
+  const text = (message.text || "").trim();
 
-      if (channels.some((channel) => channel.id === channelId)) {
-        await sendMessage(chatId, "Bu kanal avval qo‘shilgan.");
-      } else {
-        channels.push({ id: channelId, url });
-        await saveChannels(channels);
-        await sendMessage(chatId, `Kanal muvaffaqiyatli qo‘shildi: ${channelId}`);
-      }
+  if (!text) return;
 
-      return res.status(200).send("OK");
+  if (text === "/cancel") {
+    if (isAdmin(userId)) {
+      await setAdminState(userId, "");
+      await sendMessage(chatId, "Amal bekor qilindi.");
+    }
+    return;
+  }
+
+  if (text === "/start") {
+    if (isAdmin(userId)) {
+      await sendMessage(
+        chatId,
+        "Assalomu alaykum, admin! Huquqiy AI bot boshqaruv paneliga xush kelibsiz.",
+        { reply_markup: adminKeyboard() }
+      );
+    } else {
+      await sendMessage(
+        chatId,
+        "Assalomu alaykum! Men Huquqiy AI botman. O‘zbekiston qonunchiligi bo‘yicha savollaringizga yordam beraman."
+      );
     }
 
     const channels = await getChannels();
 
-    if (channels.length && !(await isSubscribed(userId, channels))) {
-      const keyboard = channels.map((channel) => [
-        { text: `📢 ${channel.id}`, url: channel.url },
-      ]);
+    if (channels.length && !(await checkSubscription(userId, channels))) {
+      await askForSubscription(chatId, channels);
+    } else if (!isAdmin(userId)) {
+      await sendMessage(
+        chatId,
+        "Savolingizni shu chatga yozishingiz mumkin."
+      );
+    }
 
-      keyboard.push([
-        { text: "✅ Obunani tekshirish", callback_data: "check_subscription" },
-      ]);
+    return;
+  }
+
+  if (text === "/admin") {
+    if (!isAdmin(userId)) {
+      await sendMessage(chatId, "⛔ Sizda admin huquqi yo‘q.");
+      return;
+    }
+
+    await showAdminMenu(chatId);
+    return;
+  }
+
+  if (isAdmin(userId)) {
+    const state = await getAdminState(userId);
+
+    if (state === "add_channel") {
+      const channel = normalizeChannel(text);
+
+      if (!channel) {
+        await sendMessage(
+          chatId,
+          "Username noto‘g‘ri. @kanal_nomi shaklida yuboring. Bekor qilish uchun /cancel yozing."
+        );
+        return;
+      }
+
+      const channels = await getChannels();
+
+      if (channels.some((item) => item.username === channel.username)) {
+        await setAdminState(userId, "");
+        await sendMessage(chatId, "Bu kanal allaqachon ro‘yxatda bor.", {
+          reply_markup: adminKeyboard(),
+        });
+        return;
+      }
+
+      channels.push(channel);
+      await saveChannels(channels);
+      await setAdminState(userId, "");
 
       await sendMessage(
         chatId,
-        "Savol yuborishdan oldin barcha homiy kanallarga obuna bo‘ling.",
-        { reply_markup: { inline_keyboard: keyboard } }
+        `✅ ${channel.username} homiy kanal sifatida qo‘shildi.\n\nMuhim: botni ushbu kanalga administrator qilib qo‘shing, aks holda obunani tekshira olmasligi mumkin.`,
+        { reply_markup: adminKeyboard() }
       );
+      return;
+    }
+  }
 
-      return res.status(200).send("OK");
+  const channels = await getChannels();
+
+  if (channels.length) {
+    const subscribed = await checkSubscription(userId, channels);
+
+    if (!subscribed) {
+      await askForSubscription(chatId, channels);
+      return;
+    }
+  }
+
+  if (text.startsWith("/")) {
+    await sendMessage(
+      chatId,
+      "Buyruq topilmadi. Savolingizni oddiy matn shaklida yozing."
+    );
+    return;
+  }
+
+  await sendMessage(chatId, "⏳ Savolingiz ko‘rib chiqilmoqda...");
+
+  try {
+    const answer = await getLegalAnswer(text);
+    const maxLength = 4000;
+
+    for (let i = 0; i < answer.length; i += maxLength) {
+      await sendMessage(chatId, answer.slice(i, i + maxLength));
+    }
+  } catch (error) {
+    console.error("Huquqiy AI xatosi:", error.message);
+    await sendMessage(
+      chatId,
+      "Kechirasiz, hozir javob tayyorlashda xatolik yuz berdi. Birozdan keyin qayta urinib ko‘ring."
+    );
+  }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(200).send("Huquqiy AI Telegram webhook ishlayapti.");
+  }
+
+  try {
+    const update = req.body;
+
+    if (update?.callback_query) {
+      await handleCallback(update.callback_query);
+    } else if (update?.message) {
+      await handleMessage(update.message);
     }
 
-    const answer = await askGemini(text);
-    await sendMessage(chatId, answer);
-
-    return res.status(200).send("OK");
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error("Telegram handler xatosi:", error);
-    return res.status(200).send("OK");
+
+    // Telegram qayta-qayta so‘rov yubormasligi uchun.
+    return res.status(200).json({ ok: false });
   }
 }
