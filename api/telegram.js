@@ -1,9 +1,9 @@
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-const GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
+
+const TELEGRAM_API = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function sendMessage(chatId, text) {
   const response = await fetch(`${TELEGRAM_API}/sendMessage`, {
@@ -11,66 +11,58 @@ async function sendMessage(chatId, text) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: String(text).slice(0, 4000),
+      text,
     }),
   });
 
-  const result = await response.json();
-
-  if (!response.ok || !result.ok) {
-    throw new Error(
-      result.description || `Telegram xatosi: ${response.status}`
-    );
+  if (!response.ok) {
+    console.error("Telegram xatosi:", await response.text());
   }
-
-  return result;
 }
 
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 async function getLegalAnswer(question) {
-  if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY Vercel sozlamalarida topilmadi.");
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY sozlanmagan");
   }
+
+  const prompt = `
+Sen O‘zbekiston qonunchiligi bo‘yicha yordamchi AI assistantsan.
+Foydalanuvchiga o‘zbek tilida, sodda va tushunarli javob ber.
+
+Qoidalar:
+- Qonun moddasi yoki raqamini aniq bilmasang, to‘qib chiqarmagin.
+- Huquqiy ma'lumotlar o‘zgarishi mumkinligini eslat.
+- Zarur bo‘lsa, lex.uz saytidan tekshirishni tavsiya qil.
+- Bu umumiy ma'lumot, rasmiy advokat maslahatining o‘rnini bosmaydi.
+
+Foydalanuvchining savoli:
+${question}
+`;
 
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-  let lastError = "AI hozir javob bera olmadi.";
+  let lastError;
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    let response;
-
     try {
-      response = await fetch(url, {
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
+          "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text:
-                  "Siz O‘zbekiston qonunchiligi bo‘yicha yordam beruvchi huquqiy AI yordamchisiz. " +
-                  "O‘zbek tilida sodda, tushunarli va ehtiyotkor javob bering. " +
-                  "Qonun moddalarini, sanalarni va huquqiy manbalarni to‘qib chiqarmang. " +
-                  "Ma’lumot yetarli bo‘lmasa, buni ochiq ayting. " +
-                  "Javob umumiy huquqiy axborot ekanini va murakkab holatlarda advokatga murojaat qilish lozimligini eslatib o‘ting.",
-              },
-            ],
-          },
           contents: [
             {
-              role: "user",
-              parts: [{ text: question }],
+              parts: [{ text: prompt }],
             },
           ],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 2048,
+            maxOutputTokens: 1500,
           },
         }),
       });
@@ -78,148 +70,113 @@ async function getLegalAnswer(question) {
       const data = await response.json();
 
       if (response.ok) {
-        const answer = data?.candidates?.[0]?.content?.parts
+        const answer = data.candidates?.[0]?.content?.parts
           ?.map((part) => part.text || "")
           .join("")
           .trim();
 
         if (answer) return answer;
 
-        lastError =
-          data?.promptFeedback?.blockReason
-            ? `Savol xavfsizlik qoidasi sabab bloklandi: ${data.promptFeedback.blockReason}`
-            : "AI bo‘sh javob qaytardi.";
-        break;
+        throw new Error("Gemini javob qaytarmadi");
       }
 
-      lastError =
-        data?.error?.message ||
-        `Gemini API xatosi: ${response.status}`;
+      const message =
+        data.error?.message || `HTTP ${response.status}`;
 
-      console.error(
-        `Gemini API xatosi (${response.status}), urinish ${attempt + 1}:`,
-        lastError
-      );
+      lastError = new Error(message);
 
-      // Faqat vaqtinchalik server yoki tezlik cheklovi xatolarida qayta urinish.
-      if (
-        ![429, 500, 502, 503, 504].includes(response.status) ||
-        attempt === 2
-      ) {
-        break;
+      console.error("Gemini API xatosi:", response.status, message);
+
+      if (![429, 500, 502, 503, 504].includes(response.status)) {
+        throw lastError;
       }
     } catch (error) {
-      lastError = error.message || "Tarmoq xatosi";
-      console.error("Gemini bilan ulanish xatosi:", lastError);
-
-      if (attempt === 2) break;
+      lastError = error;
+      console.error("AI so‘rov xatosi:", error.message);
     }
 
-    await sleep(1500 * (attempt + 1));
+    if (attempt < 2) {
+      await sleep(1000 * (attempt + 1));
+    }
   }
 
-  throw new Error(lastError);
+  throw lastError || new Error("AI xizmati hozir ishlamayapti");
 }
 
-async function handleMessage(message) {
-  const chatId = message.chat.id;
-  const userId = message.from?.id;
-  const text = (message.text || "").trim();
-
-  if (!text) {
-    await sendMessage(chatId, "Iltimos, savolingizni matn shaklida yuboring.");
-    return;
-  }
-
-  if (text === "/start") {
-    await sendMessage(
-      chatId,
-      "Assalomu alaykum!\n\n" +
-        "⚖️ Huquqiy AI botiga xush kelibsiz!\n\n" +
-        "O‘zbekiston qonunchiligi bo‘yicha savolingizni yozing.\n\n" +
-        "Eslatma: javoblar umumiy huquqiy ma’lumotdir. " +
-        "Muhim masalalarda malakali yurist yoki advokat bilan maslahatlashing."
-    );
-    return;
-  }
-
-  if (text === "/admin") {
-    if (
-      !ADMIN_TELEGRAM_ID ||
-      String(userId) !== String(ADMIN_TELEGRAM_ID)
-    ) {
-      await sendMessage(chatId, "⛔ Sizda admin huquqi yo‘q.");
-      return;
-    }
-
-    await sendMessage(
-      chatId,
-      "👨‍💻 Admin panel\n\nBot webhook orqali ishlamoqda.\nMajburiy kanal obunasi o‘chirilgan."
-    );
-    return;
-  }
-
-  if (text.startsWith("/")) {
-    await sendMessage(
-      chatId,
-      "Mavjud buyruqlar: /start va /admin\n\nHuquqiy savolingizni oddiy matnda yuboring."
-    );
-    return;
-  }
-
-  await sendMessage(chatId, "⏳ Savolingizga javob tayyorlanmoqda...");
-
-  try {
-    const answer = await getLegalAnswer(text);
-
-    // Telegram xabarlari uchun xavfsizroq uzunlik.
-    const chunks = answer.match(/[\s\S]{1,4000}/g) || [answer];
-
-    for (const chunk of chunks) {
-      await sendMessage(chatId, chunk);
-    }
-  } catch (error) {
-    console.error("Huquqiy AI xatosi:", error);
-
-    await sendMessage(
-      chatId,
-      "Kechirasiz, AI xizmati hozir vaqtincha ishlamayapti.\n\n" +
-        "Iltimos, birozdan keyin qayta urinib ko‘ring."
-    );
-  }
-}
-
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(200).send("Huquqiy AI bot ishlamoqda.");
-  }
-
-  if (!TELEGRAM_BOT_TOKEN) {
-    console.error("TELEGRAM_BOT_TOKEN sozlanmagan.");
-    return res.status(500).send("Bot sozlamasi to‘liq emas.");
+    return res.status(200).send("HuquqiyAi bot ishlayapti");
   }
 
   try {
     const update = req.body;
 
-    if (update?.message) {
-      await handleMessage(update.message);
+    if (!update?.message) {
+      return res.status(200).json({ ok: true });
     }
 
-    if (update?.callback_query) {
-      await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callback_query_id: update.callback_query.id,
-          text: "Bu tugma hozir faol emas.",
-        }),
-      });
+    const message = update.message;
+    const chatId = message.chat?.id;
+    const text = message.text?.trim();
+
+    if (!chatId || !text) {
+      return res.status(200).json({ ok: true });
     }
 
-    return res.status(200).send("OK");
+    const adminId = process.env.ADMIN_TELEGRAM_ID;
+    const userId = String(message.from?.id || "");
+
+    if (text === "/start") {
+      await sendMessage(
+        chatId,
+        "Assalomu alaykum! HuquqiyAi botiga xush kelibsiz.\n\n" +
+          "Men O‘zbekiston qonunchiligi bo‘yicha umumiy ma’lumot beraman.\n\n" +
+          "Savolingizni yozib yuboring.\n\n" +
+          "Masalan: Mehnat shartnomasi nima?"
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    if (text === "/admin") {
+      if (adminId && userId === adminId) {
+        await sendMessage(
+          chatId,
+          "Admin bo‘limi\n\nBot ishlayapti.\nMajburiy obuna talabi o‘chirilgan."
+        );
+      } else {
+        await sendMessage(chatId, "Bu buyruq faqat admin uchun.");
+      }
+
+      return res.status(200).json({ ok: true });
+    }
+
+    if (text.startsWith("/")) {
+      await sendMessage(
+        chatId,
+        "Buyruq tanilmadi. Botni boshlash uchun /start ni yuboring yoki savolingizni yozing."
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    await sendMessage(chatId, "Savolingiz ko‘rib chiqilmoqda...");
+
+    try {
+      const answer = await getLegalAnswer(text);
+      await sendMessage(chatId, answer);
+    } catch (error) {
+      console.error("Javob tayyorlashda xato:", error.message);
+
+      await sendMessage(
+        chatId,
+        "Kechirasiz, AI xizmati hozir javob bera olmayapti. Birozdan so‘ng qayta urinib ko‘ring."
+      );
+    }
+
+    return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error("Telegram handler xatosi:", error);
-    return res.status(200).send("Xatolik qayd etildi.");
+    console.error("Webhook xatosi:", error.message);
+    return res.status(200).json({ ok: true });
   }
-};
+}
