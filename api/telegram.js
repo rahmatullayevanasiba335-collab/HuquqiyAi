@@ -1,9 +1,81 @@
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+
+const LAW_URL = "https://lex.uz/uz/acts/-6257288";
+
+function getAnswer(question) {
+  const q = question.toLowerCase();
+
+  if (
+    (q.includes("ishdan bo'shat") ||
+      q.includes("ishdan bo‘shat") ||
+      q.includes("ishdan bushat")) &&
+    (q.includes("sababsiz") ||
+      q.includes("mumkinmi") ||
+      q.includes("ish beruvchi") ||
+      q.includes("ishdan bo'shat"))
+  ) {
+    return (
+      "⚖️ JAVOB: Ish beruvchi xodimni istalgan sababsiz ishdan " +
+      "bo'shata olmaydi. Mehnat shartnomasini bekor qilish uchun " +
+      "qonuniy asos va belgilangan tartib bo'lishi kerak.\n\n" +
+      "📚 Huquqiy asos:\n" +
+      "O'zbekiston Respublikasi Mehnat kodeksi, 161-modda — " +
+      "mehnat shartnomasini ish beruvchining tashabbusiga ko'ra bekor qilish.\n\n" +
+      "🔗 Rasmiy qonun:\n" + LAW_URL + "\n\n" +
+      "✅ Nima qilish mumkin?\n" +
+      "• Ishdan bo'shatish haqidagi buyruq nusxasini so'rang.\n" +
+      "• Buyruqda ko'rsatilgan asosni tekshiring.\n" +
+      "• Huquqingiz buzilgan deb hisoblasangiz, mehnat inspeksiyasi yoki " +
+      "yuristga murojaat qiling.\n\n" +
+      "⚠️ Aniq xulosa ishdan bo'shatish sababi va hujjatlarga bog'liq."
+    );
+  }
+
+  if (
+    q.includes("aliment") ||
+    q.includes("bola uchun pul")
+  ) {
+    return (
+      "⚖️ Aliment bo'yicha huquqiy ma'lumot olish uchun " +
+      "Lex.uz qonunchilik bazasidan qidiring:\n\n" +
+      "🔎 https://www.google.com/search?q=" +
+      encodeURIComponent("site:lex.uz aliment Oila kodeksi") +
+      "\n\n📚 Rasmiy baza: https://lex.uz/uz"
+    );
+  }
+
+  if (
+    q.includes("mehnat ta'tili") ||
+    q.includes("mehnat tatili") ||
+    q.includes("otpusk")
+  ) {
+    return (
+      "⚖️ Mehnat ta'tili bo'yicha qoidalar Mehnat kodeksida belgilanadi.\n\n" +
+      "🔎 Qonunchilikni qidirish:\n" +
+      "https://www.google.com/search?q=" +
+      encodeURIComponent("site:lex.uz Mehnat kodeksi yillik mehnat ta'tili") +
+      "\n\n📚 Rasmiy baza: " + LAW_URL
+    );
+  }
+
+  const searchUrl =
+    "https://www.google.com/search?q=" +
+    encodeURIComponent("site:lex.uz " + question);
+
+  return (
+    "⚖️ Savolingiz bo'yicha qonunchilik manbalari\n\n" +
+    "Savol: " + question + "\n\n" +
+    "Hozircha bu savol uchun tekshirilgan tayyor javobim yo'q. " +
+    "Noto'g'ri modda aytmaslik uchun Lex.uz manbasini qidirishga yuboryapman.\n\n" +
+    "🔎 Qonun hujjatlarini qidirish:\n" + searchUrl +
+    "\n\n📚 Rasmiy qonunchilik bazasi:\nhttps://lex.uz/uz"
+  );
+}
 
 async function sendMessage(chatId, text) {
   const response = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
+    `https://api.telegram.org/bot${TOKEN}/sendMessage`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -16,7 +88,7 @@ async function sendMessage(chatId, text) {
   );
 
   if (!response.ok) {
-    throw new Error(`Telegram API error: ${await response.text()}`);
+    throw new Error(await response.text());
   }
 }
 
@@ -25,56 +97,42 @@ module.exports = async (req, res) => {
     return res.status(200).send("Yurdik_bot ishlayapti");
   }
 
-  if (!TELEGRAM_TOKEN) {
-    console.error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  if (!TOKEN) {
+    console.error("TELEGRAM_BOT_TOKEN topilmadi");
     return res.status(500).send("Bot tokeni sozlanmagan");
   }
 
-  try {
-    const update = req.body;
-    const message = update && update.message;
+  // Telegram webhook'iga tezda javob beramiz.
+  res.status(200).send("OK");
 
-    if (!message || !message.chat || !message.text) {
-      return res.status(200).send("OK");
-    }
+  try {
+    const message = req.body && req.body.message;
+    if (!message || !message.chat || !message.text) return;
 
     const chatId = message.chat.id;
     const text = message.text.trim();
 
-    if (!text) {
-      await sendMessage(chatId, "Iltimos, savolingizni yozing.");
-      return res.status(200).send("OK");
-    }
-
     if (text === "/start") {
       await sendMessage(
         chatId,
-        "Assalomu alaykum! ⚖️ Yurdik_bot'ga xush kelibsiz.\n\n" +
-        "O‘zbekiston qonunchiligiga oid savolingizni yuboring.\n\n" +
-        "Men Lex.uz bo‘yicha hujjatlarni qidirish havolasini beraman.\n\n" +
-        "Masalan: mehnat ta'tili, aliment, ijara shartnomasi."
+        "Assalomu alaykum! ⚖️ Yurdik_bot ishlayapti.\n\n" +
+        "O'zbekiston qonunchiligi bo'yicha savolingizni yozing.\n" +
+        "Masalan: Ish beruvchi meni sababsiz ishdan bo'shatishi mumkinmi?"
       );
-
-      return res.status(200).send("OK");
+      return;
     }
 
-    const query = encodeURIComponent(`site:lex.uz ${text}`);
-    const googleUrl = `https://www.google.com/search?q=${query}`;
-    const lexUrl = "https://lex.uz/uz";
+    if (text === "/help") {
+      await sendMessage(
+        chatId,
+        "Savolingizni oddiy tilda yozing. Masalan:\n" +
+        "• Ishdan bo'shatish\n• Aliment\n• Mehnat ta'tili"
+      );
+      return;
+    }
 
-    const answer =
-      "⚖️ Qonunchilik bo‘yicha qidiruv\n\n" +
-      `Savolingiz: ${text}\n\n` +
-      "🔎 Lex.uz hujjatlarini qidirish:\n" +
-      googleUrl + "\n\n" +
-      "📚 Rasmiy qonunchilik bazasi:\n" +
-      lexUrl + "\n\n" +
-      "Eslatma: tegishli hujjatni ochib, amaldagi tahriri va moddasini tekshiring.";
-
-    await sendMessage(chatId, answer);
-    return res.status(200).send("OK");
+    await sendMessage(chatId, getAnswer(text));
   } catch (error) {
-    console.error("Telegram bot xatosi:", error);
-    return res.status(200).send("OK");
+    console.error("Bot xatosi:", error);
   }
 };
