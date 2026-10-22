@@ -7,6 +7,27 @@ function getAnswer(question) {
   const q = question.toLowerCase();
 
   if (
+    (q.includes("transport") || q.includes("mashina") ||
+     q.includes("avtomobil") || q.includes("mashina")) &&
+    (q.includes("olib qoch") || q.includes("olib ketsa") ||
+     q.includes("ugon") || q.includes("o'g'irla") ||
+     q.includes("o‘g‘irla"))
+  ) {
+    return (
+      "⚖️ JAVOB: Ha, transport vositasini qonunga xilof ravishda " +
+      "olib qochish jinoyat hisoblanishi mumkin.\n\n" +
+      "📚 HUQUQIY ASOS:\n" +
+      "O‘zbekiston Respublikasi Jinoyat kodeksining 267-moddasi — " +
+      "\"Transport vositasini olib qochish\".\n\n" +
+      "🔗 Rasmiy qonun matni:\n" +
+      "https://lex.uz/uz/docs/-111453#-267110\n\n" +
+      "❗ Javobgarlik va jazo ishning holatlari, qilmishning xususiyati " +
+      "va qonunning amaldagi tahririga bog‘liq. Transportni olib qochish " +
+      "bilan uni o‘g‘irlashning huquqiy farqi ham muhim."
+    );
+  }
+
+  if (
     (q.includes("ishdan bo'shat") ||
       q.includes("ishdan bo‘shat") ||
       q.includes("ishdan bushat")) &&
