@@ -1,97 +1,154 @@
+
 export default async function handler(req, res) {
-if (req.method !== "POST") {
-return res.status(405).json({ error: "Method not allowed" });
-}
+  if (req.method !== "POST") {
+    return res.status(200).send("Yurdik_bot ishlayapti");
+  }
 
-try {
-const message = req.body?.message;
-const chatId = message?.chat?.id;
-const text = message?.text;
+  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+  const geminiKey = process.env.GEMINI_API_KEY;
 
-if (!chatId || !text) {
-return res.status(200).json({ ok: true });
-}
+  async function sendTelegramMessage(chatId, text) {
+    const response = await fetch(
+      `https://api.telegram.org/bot${telegramToken}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: String(text).slice(0, 4000)
+        })
+      }
+    );
 
-const aiResponse = await fetch(
-"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
-{
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-"x-goog-api-key": process.env.GEMINI_API_KEY
-},
-body: JSON.stringify({
-system_instruction: {
-parts: [{
-text: `Siz Huquqiy AI Telegram botisiz.
+    if (!response.ok) {
+      throw new Error(
+        `Telegram xatosi: ${await response.text()}`
+      );
+    }
+  }
 
-O'zbekiston qonunchiligi bo'yicha o'zbek tilida sodda va tushunarli javob bering.
-Javobni quyidagi shaklda yozing:
-QONUNIY ASOS:
-TAHLIL:
-XULOSA:
-Modda raqamini aniq bilmasangiz, uydirmang.
-Bu umumiy huquqiy ma'lumot.`
-}]
-},
-contents: [{
-role: "user",
-parts: [{ text }]
-}]
-})
-}
-);
+  try {
+    if (!telegramToken || !geminiKey) {
+      console.error("API token yoki kalit sozlanmagan.");
+      return res.status(500).json({
+        ok: false,
+        error: "Environment variable sozlanmagan"
+      });
+    }
 
-const data = await aiResponse.json();
+    const message = req.body?.message;
+    const chatId = message?.chat?.id;
+    const text = message?.text?.trim();
 
-if (!aiResponse.ok) {
-console.error("Gemini xatosi:", data);
-const errorText =
-data.error?.message || "AI xizmatida xatolik yuz berdi.";
+    if (!chatId || !text) {
+      return res.status(200).json({ ok: true });
+    }
 
-await fetch(
-https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage,
-{
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-chat_id: chatId,
-text: AI xatosi: ${errorText}.slice(0, 4000)
-})
-}
-);
+    if (text === "/start") {
+      await sendTelegramMessage(
+        chatId,
+        "Assalomu alaykum! ⚖️ Yurdik_bot ishga tushdi.\n\n" +
+        "O‘zbekiston qonunchiligi bo‘yicha savolingizni yozing."
+      );
 
-return res.status(200).json({ ok: true });
-}
+      return res.status(200).json({ ok: true });
+    }
 
-const answer =
-data.candidates?.[0]?.content?.parts
-?.map(p => p.text || "")
-.join("") || "AI javob qaytarmadi. Iltimos, qayta urinib ko'ring.";
+    // Gemini API orqali javob olish
+    const aiResponse = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiKey
+        },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text:
+                  "Siz O‘zbekiston qonunchiligi bo‘yicha yordam beruvchi " +
+                  "huquqiy assistantsiz. Faqat o‘zbek tilida javob bering.\n\n" +
+                  "Foydalanuvchining savoliga to‘g‘ridan-to‘g‘ri javob bering.\n" +
+                  "Javob tuzilishi:\n" +
+                  "⚖️ QISQA JAVOB:\n" +
+                  "📚 QONUNIY ASOS:\n" +
+                  "🔎 TAHLIL:\n" +
+                  "✅ XULOSA:\n\n" +
+                  "O‘zbekiston qonunchiligiga tayaning. Tegishli qonun va " +
+                  "moddani bilsangiz, nomini va raqamini yozing. Ishonchingiz " +
+                  "komil bo‘lmasa, modda raqamini uydirmang. Rasmiy manba " +
+                  "sifatida https://lex.uz/uz ni ko‘rsating. Qonun matnini " +
+                  "tekshirmagan bo‘lsangiz, tekshirdim deb da’vo qilmang. " +
+                  "Javob oxirida aniq vaziyatga qarab huquqiy maslahat " +
+                  "farq qilishi mumkinligini qisqacha eslatib o‘ting."
+              }
+            ]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 1800
+          }
+        })
+      }
+    );
 
-const telegramResponse = await fetch(
-https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage,
-{
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-chat_id: chatId,
-text: answer.slice(0, 4000)
-})
-}
-);
+    const data = await aiResponse.json();
 
-if (!telegramResponse.ok) {
-console.error(
-"Telegram xatosi:",
-await telegramResponse.text()
-);
-}
+    if (!aiResponse.ok) {
+      console.error("Gemini API xatosi:", data);
 
-return res.status(200).json({ ok: true });
+      const status = aiResponse.status;
+      let errorText = data.error?.message || "AI xizmatida xatolik.";
 
-} catch (error) {
-console.error("Webhook xatosi:", error);
-return res.status(500).json({ error: "Server xatosi" });
-}
+      if (status === 429) {
+        errorText =
+          "Gemini API bepul kvotasi tugagan yoki so‘rovlar limiti oshgan. " +
+          "Birozdan so‘ng qayta urinib ko‘ring yoki API kvotasini tekshiring.";
+      } else if (status === 401 || status === 403) {
+        errorText =
+          "Gemini API kaliti noto‘g‘ri yoki ushbu modeldan foydalanish ruxsati yo‘q.";
+      } else if (status === 404) {
+        errorText =
+          "Gemini modeli topilmadi. AI Studio’da mavjud model nomini tekshiring.";
+      }
+
+      await sendTelegramMessage(chatId, "⚠️ " + errorText);
+      return res.status(200).json({ ok: true });
+    }
+
+    const answer = data.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text || "")
+      .join("")
+      .trim();
+
+    if (!answer) {
+      console.error(
+        "Gemini javob bermadi:",
+        JSON.stringify(data)
+      );
+
+      await sendTelegramMessage(
+        chatId,
+        "Kechirasiz, AI hozir javob tayyorlay olmadi. Qayta urinib ko‘ring."
+      );
+
+      return res.status(200).json({ ok: true });
+    }
+
+    await sendTelegramMessage(chatId, answer);
+
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    console.error("Webhook xatosi:", error);
+
+    return res.status(200).json({ ok: true });
+  }
 }
