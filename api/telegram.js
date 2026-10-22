@@ -1,15 +1,15 @@
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).send("Yurdik_bot ishlayapti");
   }
 
-  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
-  const geminiKey = process.env.GEMINI_API_KEY;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  async function sendTelegramMessage(chatId, text) {
-    const response = await fetch(
-      `https://api.telegram.org/bot${telegramToken}/sendMessage`,
+  async function sendMessage(chatId, text) {
+    const r = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -20,78 +20,58 @@ export default async function handler(req, res) {
       }
     );
 
-    if (!response.ok) {
-      throw new Error(
-        `Telegram xatosi: ${await response.text()}`
-      );
+    if (!r.ok) {
+      throw new Error("Telegram: " + await r.text());
     }
   }
 
   try {
-    if (!telegramToken || !geminiKey) {
-      console.error("API token yoki kalit sozlanmagan.");
-      return res.status(500).json({
-        ok: false,
-        error: "Environment variable sozlanmagan"
-      });
+    if (!token || !apiKey) {
+      console.error("Environment variable yetishmayapti.");
+      return res.status(500).send("Token yoki API kalit sozlanmagan");
     }
 
-    const message = req.body?.message;
-    const chatId = message?.chat?.id;
-    const text = message?.text?.trim();
+    const message = req.body && req.body.message;
+    const chatId = message && message.chat && message.chat.id;
+    const text = message && message.text && message.text.trim();
 
     if (!chatId || !text) {
       return res.status(200).json({ ok: true });
     }
 
     if (text === "/start") {
-      await sendTelegramMessage(
+      await sendMessage(
         chatId,
-        "Assalomu alaykum! ⚖️ Yurdik_bot ishga tushdi.\n\n" +
-        "O‘zbekiston qonunchiligi bo‘yicha savolingizni yozing."
+        "Assalomu alaykum! ⚖️ Yurdik_bot ishlayapti.\n\n" +
+        "O‘zbekiston qonunchiligi bo‘yicha savolingizni yuboring."
       );
-
       return res.status(200).json({ ok: true });
     }
 
-    // Gemini API orqali javob olish
-    const aiResponse = await fetch(
+    const response = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": geminiKey
+          "x-goog-api-key": apiKey
         },
         body: JSON.stringify({
           system_instruction: {
-            parts: [
-              {
-                text:
-                  "Siz O‘zbekiston qonunchiligi bo‘yicha yordam beruvchi " +
-                  "huquqiy assistantsiz. Faqat o‘zbek tilida javob bering.\n\n" +
-                  "Foydalanuvchining savoliga to‘g‘ridan-to‘g‘ri javob bering.\n" +
-                  "Javob tuzilishi:\n" +
-                  "⚖️ QISQA JAVOB:\n" +
-                  "📚 QONUNIY ASOS:\n" +
-                  "🔎 TAHLIL:\n" +
-                  "✅ XULOSA:\n\n" +
-                  "O‘zbekiston qonunchiligiga tayaning. Tegishli qonun va " +
-                  "moddani bilsangiz, nomini va raqamini yozing. Ishonchingiz " +
-                  "komil bo‘lmasa, modda raqamini uydirmang. Rasmiy manba " +
-                  "sifatida https://lex.uz/uz ni ko‘rsating. Qonun matnini " +
-                  "tekshirmagan bo‘lsangiz, tekshirdim deb da’vo qilmang. " +
-                  "Javob oxirida aniq vaziyatga qarab huquqiy maslahat " +
-                  "farq qilishi mumkinligini qisqacha eslatib o‘ting."
-              }
-            ]
+            parts: [{
+              text:
+                "Siz O‘zbekiston qonunchiligi bo‘yicha yordamchi botsiz. " +
+                "O‘zbek tilida sodda va tushunarli javob bering. " +
+                "Javobda QONUNIY ASOS, TAHLIL va XULOSA bo‘lsin. " +
+                "Modda raqamini bilmasangiz, uydirmang. " +
+                "Rasmiy manba: https://lex.uz/uz. " +
+                "Qonun matnini tekshirmagan bo‘lsangiz, tekshirdim demang."
+            }]
           },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text }]
-            }
-          ],
+          contents: [{
+            role: "user",
+            parts: [{ text: text }]
+          }],
           generationConfig: {
             temperature: 0.2,
             maxOutputTokens: 1800
@@ -100,55 +80,42 @@ export default async function handler(req, res) {
       }
     );
 
-    const data = await aiResponse.json();
+    const data = await response.json();
 
-    if (!aiResponse.ok) {
+    if (!response.ok) {
       console.error("Gemini API xatosi:", data);
 
-      const status = aiResponse.status;
-      let errorText = data.error?.message || "AI xizmatida xatolik.";
+      const msg = response.status === 429
+        ? "Gemini bepul kvotasi yoki so‘rov limiti tugagan. Keyinroq urinib ko‘ring."
+        : "Gemini API xatosi: " +
+          (data.error && data.error.message
+            ? data.error.message
+            : "Noma’lum xato");
 
-      if (status === 429) {
-        errorText =
-          "Gemini API bepul kvotasi tugagan yoki so‘rovlar limiti oshgan. " +
-          "Birozdan so‘ng qayta urinib ko‘ring yoki API kvotasini tekshiring.";
-      } else if (status === 401 || status === 403) {
-        errorText =
-          "Gemini API kaliti noto‘g‘ri yoki ushbu modeldan foydalanish ruxsati yo‘q.";
-      } else if (status === 404) {
-        errorText =
-          "Gemini modeli topilmadi. AI Studio’da mavjud model nomini tekshiring.";
-      }
-
-      await sendTelegramMessage(chatId, "⚠️ " + errorText);
+      await sendMessage(chatId, msg);
       return res.status(200).json({ ok: true });
     }
 
-    const answer = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text || "")
-      .join("")
-      .trim();
+    const answer = data.candidates &&
+      data.candidates[0] &&
+      data.candidates[0].content &&
+      data.candidates[0].content.parts
+        .map(part => part.text || "")
+        .join("")
+        .trim();
 
     if (!answer) {
-      console.error(
-        "Gemini javob bermadi:",
-        JSON.stringify(data)
-      );
-
-      await sendTelegramMessage(
+      await sendMessage(
         chatId,
-        "Kechirasiz, AI hozir javob tayyorlay olmadi. Qayta urinib ko‘ring."
+        "AI javob tayyorlay olmadi. Birozdan so‘ng qayta urinib ko‘ring."
       );
-
-      return res.status(200).json({ ok: true });
+    } else {
+      await sendMessage(chatId, answer);
     }
-
-    await sendTelegramMessage(chatId, answer);
 
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error("Webhook xatosi:", error);
-
     return res.status(200).json({ ok: true });
   }
-}
+};
