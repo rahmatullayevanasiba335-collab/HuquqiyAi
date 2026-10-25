@@ -1,9 +1,4 @@
-
-const MAX_QUESTION_LENGTH = 5000;
-
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
-
   if (req.method !== "POST") {
     return res.status(405).json({
       error: "Faqat POST so'rovi qabul qilinadi."
@@ -11,91 +6,115 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { question } = req.body || {};
+
+    if (
+      typeof question !== "string" ||
+      !question.trim()
+    ) {
+      return res.status(400).json({
+        error: "Iltimos, savolingizni kiriting."
+      });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.error("GEMINI_API_KEY sozlanmagan.");
       return res.status(500).json({
-        error: "Server sozlamalarida xatolik."
+        error: "GEMINI_API_KEY topilmadi. Vercel sozlamalarini tekshiring."
       });
     }
 
-    const question =
-      typeof req.body?.question === "string"
-        ? req.body.question.trim()
-        : "";
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1/interactions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          model: "gemini-3.5-flash-lite",
 
-    if (!question) {
-      return res.status(400).json({
-        error: "Savolingizni kiriting."
-      });
-    }
+          system_instruction: `
+Siz "Huquqiy AI" — O'zbekiston qonunchiligi
+bo'yicha umumiy huquqiy ma'lumot beruvchi
+sun'iy intellekt yordamchisiz.
 
-    if (question.length > MAX_QUESTION_LENGTH) {
-      return res.status(400).json({
-        error: "Savol 5000 belgidan oshmasligi kerak."
-      });
-    }
+Javoblarni o'zbek tilida, sodda va tushunarli bering.
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+JAVOB TUZILISHI:
 
-    let response;
+1. QONUNIY ASOS
+Tegishli qonun, kodeks yoki normativ-huquqiy
+hujjatni ko'rsating. Modda raqamini aniq
+bilmasangiz, uni o'ylab topmang.
 
-    try {
-      response = await fetch(
-        "https://generativelanguage.googleapis.com/v1/interactions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
-          },
-          body: JSON.stringify({
-            model: "gemini-3.5-flash-lite",
-            input: question
-          }),
-          signal: controller.signal
-        }
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
+2. TAHLIL
+Foydalanuvchining holatini huquqiy jihatdan
+tushuntiring. Zarur bo'lsa, qo'shimcha savol bering.
 
-    if (!response.ok) {
-      console.error("Gemini API status:", response.status);
+3. XULOSA
+Qisqa, aniq va amaliy javob bering.
 
-      return res.status(502).json({
-        error: "Javob olishda xatolik yuz berdi. Qayta urinib ko'ring."
-      });
-    }
+MUHIM QOIDALAR:
+- O'zbekiston qonunchiligiga asoslaning.
+- Qonunlarning amaldagi holatini aniq bilmasangiz,
+  LexUZ orqali tekshirishni tavsiya qiling.
+- Mavjud bo'lmagan qonun va moddalarni uydirmang.
+- Ishonchsiz ma'lumotni aniq fakt sifatida ko'rsatmang.
+- Javoblarni xolis va tushunarli yozing.
+- Bu umumiy huquqiy ma'lumot ekanini eslatib o'ting.
+`,
+
+          input: question.trim()
+        })
+      }
+    );
 
     const data = await response.json();
 
-    const answer =
-      data.output_text ||
-      (Array.isArray(data.steps)
-        ? data.steps
-            .flatMap(step => step.content || [])
-            .filter(item => item.type === "text")
-            .map(item => item.text || "")
-            .join("\n")
-        : "");
+    console.log("Gemini HTTP status:", response.status);
 
-    if (!answer) {
-      console.error("Gemini javob matnini qaytarmadi.");
+    if (!response.ok) {
+      console.error(
+        "Gemini API xatosi:",
+        JSON.stringify(data)
+      );
 
-      return res.status(502).json({
-        error: "Javob tayyorlanmadi. Qayta urinib ko'ring."
+      const message =
+        data?.error?.message ||
+        data?.message ||
+        "Gemini API bilan bog'lanishda xatolik yuz berdi.";
+
+      return res.status(
+        response.status === 429 ? 429 : 500
+      ).json({
+        error: message
       });
     }
 
-    return res.status(200).json({ answer });
+    const answer =
+      data?.output_text ||
+      data?.steps
+        ?.filter(step => step.type === "model_output")
+        ?.flatMap(step => step.content || [])
+        ?.filter(item => item.type === "text")
+        ?.map(item => item.text)
+        ?.join("") ||
+      "Javob olinmadi. Iltimos, qayta urinib ko'ring.";
+
+    return res.status(200).json({
+      answer:
+        answer +
+        "\n\n⚠️ Ushbu ma'lumot umumiy huquqiy ma'lumot bo'lib, professional yuridik maslahat o'rnini bosmaydi."
+    });
+
   } catch (error) {
-    console.error("Chat API xatosi:", error.name);
+    console.error("Server xatosi:", error);
 
     return res.status(500).json({
-      error: "Serverda xatolik yuz berdi. Qayta urinib ko'ring."
+      error: "Serverda xatolik yuz berdi. Keyinroq urinib ko'ring."
     });
   }
 }
