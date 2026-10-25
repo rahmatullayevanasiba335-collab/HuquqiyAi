@@ -1,5 +1,5 @@
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).send("Yurdik_bot ishlayapti");
   }
@@ -118,4 +118,4 @@ module.exports = async function handler(req, res) {
     console.error("Webhook xatosi:", error);
     return res.status(200).json({ ok: true });
   }
-};
+}
